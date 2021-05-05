@@ -2,6 +2,8 @@ import os
 import traceback
 import pandas as pd
 from collections import OrderedDict, namedtuple
+from datetime import timedelta as timedelta_t
+from typing import Union, List, Set, Dict
 
 
 def __wrap_with_color(code):
@@ -27,6 +29,29 @@ red, green, yellow, blue, magenta, cyan, white = (
 def is_localhost(host):
     return host.lower() == 'localhost' or host == '127.0.0.1'
 
+
+def time_delta_to_str(d: Union[int, timedelta_t, pd.Timedelta]):
+    """
+    Convert timedelta object to pretty print format
+
+    :param d:
+    :return:
+    """
+    seconds = d.total_seconds() if isinstance(d, (pd.Timedelta, timedelta_t)) else int(d)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    r = ''
+    if days > 0:
+        r += '%dD' % days
+    if hours > 0:
+        r += '%dH' % hours
+    if minutes > 0:
+        r += '%dMin' % minutes
+    if seconds > 0:
+        r += '%dS' % seconds
+    return r
+    
 
 class mstruct:
     """
