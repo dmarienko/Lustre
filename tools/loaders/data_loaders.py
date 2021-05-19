@@ -18,23 +18,44 @@ class TickData:
     instrument: str
     symbol: str
     exchange: str
-    ticks: Dict[str, pd.DataFrame]
+    data: pd.DataFrame
         
-    def ohlc(self, timeframe):
-        return ohlc_resample(self.ticks[self.symbol], timeframe)
+    def ohlc(self, timeframe, tz=None):
+        return ohlc_resample(self.data, timeframe, resample_tz=tz)
     
-    def ohlcs(self, timeframe):
-        return ohlc_resample(self.ticks, timeframe)
+    def ohlcs(self, timeframe, tz=None):
+        return {self.symbol: ohlc_resample(self.data, timeframe, resample_tz=tz)}
     
-    def datas(self, what):
-        if what == 'ticks':
-            return self.ticks
-        return self.ohlcs(what) 
+    def datas(self, what, **kwargs):
+        return self.ticks() if what == 'ticks' else self.ohlcs(what, **kwargs) 
     
-    def data(self, what):
-        if what == 'ticks':
-            return self.ticks[self.symbol]
-        return self.ohlc(what) 
+    def data(self, what, **kwargs):
+        return self.tick() if what == 'ticks' else self.ohlc(what, **kwargs) 
+    
+    def ticks(self):
+        return {self.symbol: self.data} 
+    
+    def tick(self):
+        return self.data 
+    
+    
+class MultiTickData:
+    def __init__(self, *tdata):
+        self.tickdata: Dict[str, TickData] = {t.symbol: t for t in tdata}
+    
+    def ohlc(self, timeframe, **kwargs):
+        return {s: v.ohlc(timeframe, **kwargs) for s, v in self.tickdata.items()}
+    
+    def __getitem__(self, idx):
+        if isinstance(idx, (tuple, list)):
+            return MultiTickData(*[self.tickdata[i] for i in idx])
+        return self.tickdata[idx]
+    
+    def ticks(self):
+        return {s:v.tick() for s,v in self.tickdata.items()}
+
+    def __repr__(self):
+        return ', '.join([f'{n}:({len(v.tick())})' for n,v in self.tickdata.items()])
     
 
 def __get_database_path(vendor, timeframe, path='./'):
@@ -72,7 +93,7 @@ def ls_symbols(vendor, timeframe='1Min', path='../data'):
             print(f"{yellow(t[0])}:\t{red(start_time)} - {red(last_time)}")
     
         
-def load_data(instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min', path='../data'):
+def load_instrument_data(instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min', path='../data'):
     if ':' not in instrument:
         raise ValueError("Wrong instrument name format, must be 'exchange:symbol' ")
     
@@ -82,7 +103,12 @@ def load_data(instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min'
         data = pd.read_sql_query(f"SELECT * FROM {symbol.upper()} where time >= '{start}' and time <= '{end}'", db, index_col='time')
         
     data.index = pd.DatetimeIndex(data.index)
-    return TickData(instrument, symbol, vendor, {symbol: data})
+    return TickData(instrument, symbol, vendor, data)
+
+
+def load_data(*instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min', path='../data'):
+    in_list = instrument if isinstance(instrument, (tuple, list)) else list(instrument)
+    return MultiTickData(*[load_instrument_data(l, start, end, timeframe, path) for l in in_list])
         
 
 def import_mt5_ohlc_data(vendor):

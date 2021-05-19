@@ -33,6 +33,7 @@ def setup_mpl_theme(theme='dark'):
         ('axes.labelsize', 'large'),
         ('axes.labelcolor', 'green'),
         ('axes.prop_cycle', cycler('color', ['#449AcD', 'g', '#f62841', 'y', '#088487', '#E24A33', '#f01010'])),
+#         ('axes.prop_cycle', cycler('color', ['#08F7FE', '#FE53BB', '#F5D300', '#00ff41', 'r', '#9467bd', ])), 
         ('legend.fontsize', 'small'),
         ('legend.fancybox', False),
         ('legend.edgecolor', '#305030'),
