@@ -33,8 +33,9 @@ class RADChandelier(TakeStopTracker):
         self._dbg_values = {}
         
     def statistics(self):
-#         from ira.utils.nb_functions import z_save
-#         z_save('RAD_test', self._dbg_values)
+        if self._dbg_values:
+            from ira.utils.nb_functions import z_save
+            z_save('RAD_test', self._dbg_values)
         return super().statistics()
 
     def get_stops(self):
@@ -82,7 +83,9 @@ class RADChandelier(TakeStopTracker):
             
 
     def on_quote(self, quote_time, bid, ask, bid_size, ask_size, **kwargs):
+        # refresh current stop level
         self.update_stop_level()
+        
         if self.side == 0 or self.level is None:
             return None
         
@@ -127,6 +130,7 @@ class RADChandelier(TakeStopTracker):
 #             return None
 
         if self.side == 0 or self.level is None:
+            self.debug(f'[{quote_time}] {self._instrument} skip entry indicators are not ready: {self.level} / {self.side}')
             return None
 
         if signal_qty > 0:

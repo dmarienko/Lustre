@@ -62,6 +62,31 @@ def __get_database_path(vendor, timeframe, path='./'):
     return join(path, f'{vendor}_{timeframe.upper()}.db')
 
 
+def __get_hdf_database_path(vendor, timeframe, path='./'):
+    return join(path, f'{vendor}_{timeframe.upper()}.hdf')
+
+
+def update_database_hdf(vendor, symbol, data, path='../data/'):
+    timeframe = time_delta_to_str(pd.Timedelta(infer_series_frequency(data[:200])))
+    tD = pd.Timedelta(timeframe)
+    db_path = __get_hdf_database_path(vendor, timeframe, path)
+    
+    with pd.HDFStore(db_path, 'a', complevel=9, complib='blosc:zlib') as store:
+        if symbol in store.keys():
+            sd = store.get(symbol)
+            last_time = sd.index[-1]
+        else:
+            last_time = data.index[0] - tD
+            
+        print(f' >> Inserting {green(symbol)} {yellow(timeframe)} for [{red(last_time)} -> {red(data.index[-1])}] ... ', end='')
+        data_to_insert = data[pd.Timestamp(last_time) + tD:]
+        if len(data_to_insert) > 0:
+            store.append(symbol, data_to_insert)
+            print(yellow('[OK]'))
+        else:
+            print(yellow('[NOTHING TO APPEND]'))
+    
+
 def update_database(vendor, symbol, data, path='../data/'):
     timeframe = time_delta_to_str(pd.Timedelta(infer_series_frequency(data[:200])))
     tD = pd.Timedelta(timeframe)
@@ -83,6 +108,20 @@ def update_database(vendor, symbol, data, path='../data/'):
         print(yellow('[OK]'))
         
         
+def ls_symbols_hdf(vendor, timeframe='1Min', path='../data'):
+    """
+    List symbols in HDF storage
+    """
+    symbs = []
+    with pd.HDFStore(__get_hdf_database_path(vendor, timeframe, path), 'r') as store:
+        for k in store.keys():
+            sd = store.get(k)
+            start, end = sd.index[[0,-1]]
+            print(f"{yellow(k.strip('/'))}:\t{red(start)} - {red(end)}")
+            symbs.append(k.strip('/'))
+    return symbs
+            
+        
 def ls_symbols(vendor, timeframe='1Min', path='../data'):
     with sqlite3.connect(__get_database_path(vendor, timeframe, path)) as db:
         tables = db.execute(f"SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -93,22 +132,25 @@ def ls_symbols(vendor, timeframe='1Min', path='../data'):
             print(f"{yellow(t[0])}:\t{red(start_time)} - {red(last_time)}")
     
         
-def load_instrument_data(instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min', path='../data'):
+def load_instrument_data(instrument, start='2000-01-01', end='2200-01-01', timeframe='1Min', dbtype='hdf', path='../data'):
     if ':' not in instrument:
         raise ValueError("Wrong instrument name format, must be 'exchange:symbol' ")
     
     vendor, symbol = instrument.split(':')
     
-    with sqlite3.connect(__get_database_path(vendor, timeframe, path)) as db:
-        data = pd.read_sql_query(f"SELECT * FROM {symbol.upper()} where time >= '{start}' and time <= '{end}'", db, index_col='time')
-        
-    data.index = pd.DatetimeIndex(data.index)
+    if dbtype == 'hdf':
+        data = pd.read_hdf(__get_hdf_database_path(vendor, timeframe, path), symbol)
+    else:
+        with sqlite3.connect(__get_database_path(vendor, timeframe, path)) as db:
+            data = pd.read_sql_query(f"SELECT * FROM {symbol.upper()} where time >= '{start}' and time <= '{end}'", db, index_col='time')
+
+        data.index = pd.DatetimeIndex(data.index)
     return TickData(instrument, symbol, vendor, data)
 
 
-def load_data(*instrument, start='2017-01-01', end='2200-01-01', timeframe='1Min', path='../data'):
+def load_data(*instrument, start='2000-01-01', end='2200-01-01', timeframe='1Min', path='../data', dbtype='hdf'):
     in_list = instrument if isinstance(instrument, (tuple, list)) else list(instrument)
-    return MultiTickData(*[load_instrument_data(l, start, end, timeframe, path) for l in in_list])
+    return MultiTickData(*[load_instrument_data(l, start, end, timeframe, dbtype, path) for l in in_list])
         
 
 def import_mt5_ohlc_data(vendor):

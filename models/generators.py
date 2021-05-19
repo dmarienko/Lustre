@@ -39,4 +39,8 @@ class Lustre(BaseEstimator):
         li = c[(dc > +a * self.mx) & (c > cs) & (v >= vs)].index  
         si = c[(dc < -a * self.mx) & (c < cs) & (v >= vs)].index  
         
-        return q.shift_for_timeframe(srows(pd.Series(+1, li), pd.Series(-1, si)), x, self.timeframe)
+        return q.shift_for_timeframe(srows(
+            pd.Series(np.nan, xr.index[:1]), # first None signal to ignite tracker earlier
+            pd.Series(+1, li), 
+            pd.Series(-1, si)
+        ), x, self.timeframe)

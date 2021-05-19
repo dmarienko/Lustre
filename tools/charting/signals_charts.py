@@ -30,4 +30,4 @@ def plot_entries(execs, period=None, font_size=12, ms=12):
         else:
             _clr = 'w' if q > 0 else '#6090f0'
             plt.plot(t, p, '^' if q > 0 else 'v', c = _clr, label='Entry')
-            plt.annotate(f'{p}', (t, p), xytext=(5,5), textcoords='offset points', c=_clr, size=font_size)
+            plt.annotate(f'{p:.2f}', (t, p), xytext=(5,5), textcoords='offset points', c=_clr, size=font_size)
