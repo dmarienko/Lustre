@@ -8,6 +8,9 @@ from tools.analysis.tools import srows, scols
 from tools.utils.utils import mstruct
 
 
+class Pyramiding(TakeStopTracker):
+    
+
 class RADChandelier(TakeStopTracker):
     """
     RAD chandelier position tracker (no pyramiding only trailing stop)
@@ -122,12 +125,6 @@ class RADChandelier(TakeStopTracker):
 
         if qty != 0:
             return None
-
-#         s_stop, l_stop = self.get_stops()
-
-        # skip signal if not ready
-#         if s_stop is None:
-#             return None
 
         if self.side == 0 or self.level is None:
             self.debug(f'[{quote_time}] {self._instrument} skip entry indicators are not ready: {self.level} / {self.side}')

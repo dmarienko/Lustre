@@ -32,7 +32,7 @@ class Lustre(BaseEstimator):
         c, v = xr.close, xr.volume
 
         cs = smooth(c, 'ema', self.price_moving_period)
-        vs = smooth(v, 'sma', self.vol_moving_period)
+        vs = smooth(v, 'wma', self.vol_moving_period)
         a = atr(xr, self.atr_period, smoother='sma').shift(1)
         
         dc = c.diff()

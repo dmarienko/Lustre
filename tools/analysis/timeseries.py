@@ -41,7 +41,7 @@ def smooth(x, stype: Union[str, types.FunctionType], *args, **kwargs) -> pd.Seri
     """
     Smooth series using either given function or find it by name from registered smoothers
     """
-    smoothers = {'sma': sma, 'ema': ema, 'tema': tema, 'dema': dema, 'zlema': zlema, 'kama': kama}
+    smoothers = {'sma': sma, 'ema': ema, 'tema': tema, 'dema': dema, 'zlema': zlema, 'kama': kama, 'wma': wma}
 
     f_sm = __empty_smoother
     if isinstance(stype, str):
@@ -832,3 +832,28 @@ def intraday_min_max(data, timezone='EET'):
     x = x.tz_convert(timezone)
     return x.groupby(x.index.date).apply(_day_min_max).tz_convert(source_tz)
 
+
+def wma(x, period, weights=None):
+    """
+    Weighted MA
+    """
+    x = column_vector(x)
+        
+    # if weights are set up
+    if weights is None or not weights: 
+        w = np.arange(1, period + 1)
+    else:
+        w = np.array(weights)  
+        period = len(w)
+        
+    if period > len(x):
+        raise ValueError(f"Period for wma must be less than number of rows. {period}, {len(x)}")
+        
+    w = w / np.sum(w)
+    y = x.astype(np.float64).copy()
+    for i in range(0, x.shape[1]):
+        nan_start = np.where(~np.isnan(x[:, i]))[0][0]
+        y_s = y[:, i][nan_start:]
+        wm = np.concatenate((nans(period - 1), np.convolve(y_s, w, 'valid')))
+        y[:, i] = np.concatenate((nans(nan_start), wm))
+    return y
