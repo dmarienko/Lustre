@@ -8,7 +8,7 @@ from tools.analysis.tools import srows, scols
 from tools.utils.utils import mstruct
 
 
-class Pyramiding(TakeStopTracker):
+# class Pyramiding(TakeStopTracker):
     
 
 class RADChandelier(TakeStopTracker):
