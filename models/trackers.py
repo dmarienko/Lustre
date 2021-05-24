@@ -8,7 +8,146 @@ from tools.analysis.tools import srows, scols
 from tools.utils.utils import mstruct
 
 
-# class Pyramiding(TakeStopTracker):
+class Pyramiding(TakeStopTracker):
+    """
+    Pyramiding tracker.
+    
+        1. Open position = size on signal, stop at entry - stop_mx * ATR
+        
+        2. If price hits entry + next_mx * ATR and # entry < max_positions 
+            it adds to position: size * pyramiding_factor
+            stop = avg_position_price - stop_mx * ATR
+            next_add_level = avg_position_price + next_mx * ATR
+            
+        3. Skip any other signals if position is open
+        
+    
+    """
+    def __init__(self, size, stop_mx=3, next_mx=3, pyramiding_factor=0.5, max_positions=3, 
+                 flat_on_max_step=False, pyramiding_start_step=3,
+                 atr_period=22, atr_timeframe='1d', atr_smoother='sma', 
+                 round_size=1, debug=False):
+        super().__init__(debug)
+        self.size = size 
+        self.stop_mx = stop_mx
+        self.next_mx = next_mx 
+        self.pyramiding_factor = pyramiding_factor
+        self.pyramiding_start_step = max(abs(pyramiding_start_step), 2)
+        self.max_positions = max_positions
+        self.flat_on_max_step = flat_on_max_step
+        self.atr_period = atr_period
+        self.atr_timeframe = atr_timeframe 
+        self.atr_smoother = atr_smoother
+        self.log10_round_size = int(np.log10(max(round_size, 1)))
+        
+    def initialize(self):
+        self.n_entry = 0
+        self.next_level = np.nan
+        
+        # indicators stuff
+        self.ohlc = self.get_ohlc_series(self.atr_timeframe)
+        self.atr = ATR(self.atr_period, self.atr_smoother)
+        self.ohlc.attach(self.atr)
+
+    def get_position_size_for_step(self, n):
+        n = n - self.pyramiding_start_step + 2
+        return np.round(self.size * (self.pyramiding_factor)**n, self.log10_round_size)
+
+    def on_quote(self, quote_time, bid, ask, bid_size, ask_size, **kwargs):
+        tr = self.atr[1]
+        qty = self._position.quantity
+
+        if qty != 0 and tr is not None and np.isfinite(tr):
+            # --- long position processing
+            if qty > 0:
+                px = ask
+                D = +1
+
+            # --- long position processing
+            if qty < 0:
+                px = bid
+                D = -1
+                 
+            # price hits target's level
+            if (px - self.next_level) * D >= 0:
+                # we've aleady reached this level so next will be recomputed
+                mesg = f"[{quote_time}] {self._instrument} {px:.3f} touched {self.next_level:.3f} "
+                self.next_level = np.nan
+                
+                # if we can increase
+                if self.n_entry + 1 <= self.max_positions:
+                    inc_size = self.get_position_size_for_step(self.n_entry + 1)
+                    if inc_size > 0:
+                        self.n_entry += 1
+                        self.next_level = px + D * self.next_mx * tr 
+                        
+                        if self.n_entry >= self.pyramiding_start_step:
+                            mesg += f'step ({self.n_entry}) -> {D*inc_size:+.0f} at ${px:.3f} next: {self.next_level:.3f}'
+
+                            # increase position
+                            self.trade(quote_time, qty + D * inc_size, mesg)
+
+                            # average position price
+                            avg_price = self._position.cost_usd / self._position.quantity
+
+                            # set new stop
+                            n_stop = avg_price - D * self.stop_mx * tr
+                        else:
+                            # set stop to breakeven only (not increase position !)
+                            mesg += f'step ({self.n_entry}) at ${px:.3f} move stop to breakeven next: {self.next_level:.3f}'
+                            # average position price
+                            avg_price = self._position.cost_usd / self._position.quantity
+                            n_stop = avg_price
+                        
+                        mesg += f", stop: {n_stop:.3f}, avg_price: {avg_price:.3f}"
+                        self.stop_at(quote_time, n_stop)
+                    else:
+                        if self.flat_on_max_step:
+                            mesg += "closing position because max possible step is reached and flat_on_max_step"
+                            self.trade(quote_time, 0, "Take profit")
+                        else:
+                            mesg += "position increasing size is zero: skip this step"
+                else:
+                    # increase position
+                    if self.flat_on_max_step:
+                        mesg += "closing position because max step is and flat_on_max_step"
+                        self.trade(quote_time, 0, "Take profit")
+                    else:
+                        mesg += f'skip increasing atep: max number of entries ({self.max_positions}) '
+                        
+                self.debug(mesg)
+
+        super().on_quote(quote_time, bid, ask, bid_size, ask_size, **kwargs)
+        
+    def on_signal(self, signal_time, signal_qty, quote_time, bid, ask, bid_size, ask_size):
+        tr = self.atr[1]
+
+        # we skip all signals if position is not flat or indicators not ready
+        if self._position.quantity != 0 or tr is None or not np.isfinite(tr):
+            return None
+
+        pos = None
+        if signal_qty > 0:
+            # open initial long
+            pos = self.size
+            self.n_entry = 1
+            self.stop_at(signal_time, ask - self.stop_mx * tr)
+            self.next_level = ask + self.next_mx * tr 
+            self.debug(
+                f'[{quote_time}] {self._instrument} step ({self.n_entry}) -> {pos} at ${ask:.3f} stop: {ask - self.stop_mx * tr:.3f}, next: {self.next_level:.3f}'
+            )
+
+        elif signal_qty < 0:
+            # open initial long
+            pos = -self.size
+            self.stop_at(signal_time, bid + self.stop_mx * tr)
+            self.next_level = bid - self.next_mx * tr 
+            self.debug(
+                f'[{quote_time}] {self._instrument} step ({self.n_entry}) -> {pos} at ${bid:.3f} stop: {bid + self.stop_mx * tr:.3f}, next: {self.next_level:.3f}'
+            )
+            self.n_entry = 1
+
+        return pos
     
 
 class RADChandelier(TakeStopTracker):
@@ -69,12 +208,10 @@ class RADChandelier(TakeStopTracker):
         c2 = self.ohlc[2].close
         
         if c2 > l2 and c1 < l1:
-#             self.debug(f'BROKE LONG SUP {self.ohlc[0].time}')
             self.side = -1
             self.level = s1
             
         if c2 < s2 and c1 > s1:
-#             self.debug(f'BROKE SHORT RES {self.ohlc[0].time}')
             self.side = +1
             self.level = l1
         
@@ -84,7 +221,6 @@ class RADChandelier(TakeStopTracker):
         if self.side < 0:
             self.level = min(self.level, s1)
             
-
     def on_quote(self, quote_time, bid, ask, bid_size, ask_size, **kwargs):
         # refresh current stop level
         self.update_stop_level()
@@ -92,28 +228,16 @@ class RADChandelier(TakeStopTracker):
         if self.side == 0 or self.level is None:
             return None
         
-#         s_stop, l_stop = self.get_stops()
         qty = self._position.quantity
         
         # debug
-#         s_stop, l_stop = self.get_stops()
-#         self._dbg_values[self.ohlc[0].time] = {'Side': self.side, 'Level': self.level}
+        # self._dbg_values[self.ohlc[0].time] = {'Side': self.side, 'Level': self.level}
 
         if qty != 0:
-            # calculate new levels
-#             s_stop, l_stop = self.get_stops()
-
-            # check if we should pullup/down
-#             if qty > 0 and l_stop > self.stop:
-#                 self.stop_at(quote_time, l_stop)
-#                 self.debug(f'[{quote_time}] {self._instrument} pull up stop to {l_stop}')
             if qty > 0 and self.level > self.stop:
                 self.stop_at(quote_time, self.level)
                 self.debug(f'[{quote_time}] {self._instrument} pull up stop to {self.level}')
 
-#             if qty < 0 and s_stop < self.stop:
-#                 self.stop_at(quote_time, s_stop)
-#                 self.debug(f'[{quote_time}] {self._instrument} pull down stop to {s_stop}')
             if qty < 0 and self.level < self.stop:
                 self.stop_at(quote_time, self.level)
                 self.debug(f'[{quote_time}] {self._instrument} pull down stop to {self.level}')
